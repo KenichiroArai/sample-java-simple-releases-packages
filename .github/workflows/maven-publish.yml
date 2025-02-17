@@ -1,0 +1,75 @@
+# このワークフローは新しいタグ（v*）がプッシュされた時、またはGitHubリリースが作成された時に実行され、
+# MavenプロジェクトのビルドとGitHub Packagesへの公開を自動的に行います。
+name: Release and Publish
+
+on:
+    push:
+        tags:
+            - "v*"
+    release:
+        types: [created]
+
+permissions:
+    contents: write
+    packages: write
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+
+        steps:
+            # ソースコードをチェックアウト
+            - uses: actions/checkout@v4
+
+            # Java開発環境のセットアップ
+            - name: Set up JDK 21
+              uses: actions/setup-java@v4
+              with:
+                  java-version: "21"
+                  distribution: "temurin"
+                  cache: maven
+                  server-id: github
+                  settings-path: ${{ github.workspace }}
+
+            # Maven設定の構成
+            - name: Configure Maven settings.xml
+              uses: s4u/maven-settings-action@v3.0.0
+              with:
+                  servers: |
+                      [{
+                        "id": "github",
+                        "username": "${{ github.actor }}",
+                        "password": "${{ secrets.GITHUB_TOKEN }}"
+                      }]
+
+            # バージョン情報の確認
+            - name: バージョン情報の確認
+              run: |
+                  echo "バージョン情報の確認を開始します..."
+                  mvn versions:display-property-updates
+
+            # プロジェクトのビルド
+            - name: ビルド
+              run: |
+                  echo "Mavenビルドプロセスを開始します..."
+                  mvn -B package --file pom.xml
+                  echo "Mavenビルドが完了しました"
+
+            # GitHub Packagesへの公開
+            - name: Publish to GitHub Packages
+              run: |
+                  echo "GitHub Packagesへの公開を開始します..."
+                  mvn deploy
+                  echo "パッケージの公開が完了しました"
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+            # GitHubリリースの作成
+            - name: Create Release
+              uses: softprops/action-gh-release@v1
+              with:
+                  files: target/*.jar
+                  generate_release_notes: true
+                  body: |
+                      ## 成果物
+                      - JARファイル: `target/*.jar`
